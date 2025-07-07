@@ -5,13 +5,13 @@
 #include <iostream>
 
 int main(int argc, char** argv) {
-    if (argc < 2) {
-        std::cerr << "Format required: kv_client VERB [args]\n";
+    if (argc < 4) {
+        std::cerr << "Format required: kv_client [IP address] [Port] VERB [args]";
         return 1;
     }
 
     std::string message;
-    for (int i = 1; i < argc; ++i) {
+    for (int i = 3; i < argc; ++i) {
         message += argv[i];
         if (i + 1 < argc) {
             message += ' ';
@@ -22,7 +22,7 @@ int main(int argc, char** argv) {
     addrinfo hints{}, *res;
     hints.ai_family = AF_INET;
     hints.ai_socktype = SOCK_STREAM;
-    getaddrinfo("127.0.0.1", "4000", &hints, &res);
+    getaddrinfo(argv[1], argv[2], &hints, &res);
     int fd = socket(res->ai_family, res->ai_socktype, 0);
     connect(fd, res->ai_addr, res->ai_addrlen);
     freeaddrinfo(res);
@@ -36,6 +36,6 @@ int main(int argc, char** argv) {
         std::cout << buf;
     }
     close(fd);
-    
+
     return 0;
 }
