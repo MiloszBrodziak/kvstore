@@ -1,17 +1,19 @@
+#include "kv_store.hpp"
+
+#include "ThreadPool.hpp"
+
 #include <arpa/inet.h>
 #include <netdb.h>
 #include <sys/socket.h>
 #include <unistd.h>
-#include <signal.h>
 #include <csignal>
-#include <cstring>
+#include <chrono>
 #include <iostream>
-#include <unordered_map>
-#include <atomic>
 
-static int server_fd = -1;
-static std::atomic<bool> running(true);
-static std::unordered_map<std::string, std::string> map;
+int server_fd;
+std::atomic<bool> running{true};
+std::unordered_map<std::string, std::string> map;
+std::mutex m;
 
 void sigint_handler(int) { running = false; }
 
@@ -39,6 +41,7 @@ int open_listen_socket(const std::string& port) {
 }
 
 void handle_client(int client_fd) {
+    auto start_time = std::chrono::high_resolution_clock::now();
     char buf[1024];
     ssize_t n = read(client_fd, buf, sizeof(buf) - 1);
     if (n > 0) {
@@ -50,26 +53,38 @@ void handle_client(int client_fd) {
         std::string_view verb = cmd.substr(0, first_space);
         if (verb == "GET") {
             std::string key(cmd.substr(first_space + 1));
-            auto it = map.find(key);
-            response = (it == map.end()) ? "NULL!\n" : "$" + it->second + "\n";
+            {
+                std::lock_guard lock(m);
+                auto it = map.find(key);
+                response = (it == map.end()) ? "NULL!\n" : "$" + it->second + "\n";
+            }
         }
         else if (verb == "SET") {
             auto second_space = cmd.find(' ', first_space + 1);
             std::string key(cmd.substr(first_space + 1, second_space - first_space - 1));
             std::string val(cmd.substr(second_space + 1));
-            map[key] = val;
+            {
+                std::lock_guard lock(m);
+                map[key] = val;
+            }
             response = "SUCCESS!\n";
         }
         else if (verb == "DEL") {
             std::string key(cmd.substr(first_space + 1));
-            size_t num_removed = map.erase(key);
-            response = num_removed ? "SUCCESS!\n" : "NULL!\n";
+            {
+                std::lock_guard lock(m);
+                size_t num_removed = map.erase(key);
+                response = num_removed ? "SUCCESS!\n" : "NULL!\n";
+            }
         } else {
             response = "VERB COULD NOT BE PARSED!\n";
         }
         send(client_fd, response.c_str(), response.size(), MSG_NOSIGNAL);
     }
     close(client_fd);
+    auto end_time = std::chrono::high_resolution_clock::now();
+    auto time = std::chrono::duration_cast<std::chrono::microseconds>(end_time - start_time).count();
+    fprintf(stderr, "Latency: %lld microseconds\n", static_cast<long long>(time));
 }
 
 int main(int argc, char** argv) {
@@ -85,6 +100,10 @@ int main(int argc, char** argv) {
         server_fd = open_listen_socket(port);
         std::cout << "Listening on Port:" << port << '\n';
 
+        unsigned num_threads = std::thread::hardware_concurrency();
+        if (num_threads == 0) num_threads = 4;
+        ThreadPool tp(num_threads);
+
         while (running) {
             int client = accept(server_fd, nullptr, nullptr);
             if (client < 0) {
@@ -92,7 +111,7 @@ int main(int argc, char** argv) {
                 perror("Accept Error");
                 continue;
             }
-            handle_client(client);
+            tp.enqueue([client] {handle_client(client);});
         }
 
         close(server_fd);
