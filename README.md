@@ -1,7 +1,7 @@
 # Key-Value Store
-Multithreaded Key-Value Store v0.1
+Multithreaded Key-Value Store v1.0
 
-Currently supports a singlethreaded key-value store using a STL unordered_map.
+Currently implemented using a STL unordered_map. Mulithreading is enabled using mutex locks and a pool of threads.
 
 ## Build & Run
 ```bash

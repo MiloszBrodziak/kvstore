@@ -1,5 +1,5 @@
 
-# Key-Value Store v0.1 Protocol
+# Key-Value Store v1.0 Protocol
 
 ASCII Commands:
 SET <key> <val>
